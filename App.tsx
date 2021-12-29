@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
-  Dimensions,
   TextInput,
 } from 'react-native'
 
@@ -16,6 +15,7 @@ import {
   BleManager,
   Characteristic,
   Device,
+  DeviceId,
 } from 'react-native-ble-plx'
 
 import base64 from 'react-native-base64'
@@ -26,28 +26,30 @@ import IconBluetoothSvg from './assets/bluetooth.svg'
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle)
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput)
-const { width, height } = Dimensions.get('screen')
 
 const MIN = 75
 const MAX = 100
 
 interface IState {
   modalVisible: boolean
-  devices: Array<any>
+  devices: Array<Device>
+  deviceId: DeviceId
 }
 
 export default class App extends Component {
-  manager = new BleManager()
+  manager: BleManager
   state = {
     modalVisible: false,
     devices: [],
-  }
+    deviceId: '',
+  } as IState
   circleRadius = new Animated.Value(MIN)
   circleRef: any
   inputRef: any
 
   constructor(props: any) {
     super(props)
+    this.manager = new BleManager()
   }
 
   openModal() {
@@ -67,27 +69,25 @@ export default class App extends Component {
   scanDevices() {
     const devices = new Set()
 
-    this.manager.startDeviceScan(null, null, async (error, device) => {
-      if (error) {
-        console.log('Error: ', error.message)
-        return
-      }
-      if (device?.name) {
-        const servicesUUIDsAvailable = device?.serviceUUIDs?.filter(
-          (uuid) => uuid === '0000180d-0000-1000-8000-00805f9b34fb'
-        )
-        if (servicesUUIDsAvailable?.length) {
+    this.manager.startDeviceScan(
+      ['0000180d-0000-1000-8000-00805f9b34fb'],
+      null,
+      async (error, device) => {
+        if (error) {
+          console.log('Error: ', error.message)
+          return
+        }
+        if (Boolean(device?.name)) {
           devices.add(device)
-          this.setState({ devices: [...devices] })
+          this.setState({ devices: [...devices], deviceId: device?.id })
           this.manager.stopDeviceScan()
         }
       }
-    })
+    )
   }
 
   selectDevice(selectedDevice: Device) {
-    selectedDevice
-      .connect()
+    selectedDevice.connect()
       .then((device: Device) => {
         console.log('Connection available with: ', device.name)
         return device.discoverAllServicesAndCharacteristics()
@@ -106,12 +106,14 @@ export default class App extends Component {
     const heartRateServiceUUID = '0000180D-0000-1000-8000-00805F9B34FB'
     const heartRateCharacteristicUUID = '00002A37-0000-1000-8000-00805F9B34FB'
 
-    device.monitorCharacteristicForService(
+    const subscription = device.monitorCharacteristicForService(
       heartRateServiceUUID,
       heartRateCharacteristicUUID,
       (error: BleError | null, charac: Characteristic | null) => {
         if (error) {
           console.log('Monitor fail:', JSON.stringify(error))
+          subscription.remove()
+          return
         }
         const heartRate = this.decodeHeartRate(charac?.value!)
         this.inputRef?.setNativeProps({
@@ -154,6 +156,19 @@ export default class App extends Component {
 
   setModalVisible(visible: boolean) {
     this.setState({ modalVisible: visible })
+  }
+
+  componentWillUnmount() {
+    this.manager.cancelDeviceConnection(this.state.deviceId)
+      .then((device: Device) => {
+        console.log(`Device ${device.name} desconnected`)
+      })
+      .catch((error) => {
+        console.log(error)
+      })
+      .finally(() => {
+        this.manager.destroy()
+      })
   }
 
   render() {
@@ -201,7 +216,7 @@ export default class App extends Component {
           </View>
         </Modal>
         <View style={styles.animationSvg}>
-        <Svg height={680} width={400}>
+          <Svg height={680} width={400}>
             <AnimatedCircle
               ref={(ref: any) => (this.circleRef = ref)}
               cx={400 / 2}
@@ -228,9 +243,9 @@ export default class App extends Component {
             onPress={() => this.openModal()}
           >
             <View style={styles.iconBluetooth}>
-              <IconBluetoothSvg/>
+              <IconBluetoothSvg />
             </View>
-            <Text style={styles.textBtnOpen}>Choose Bluetooth</Text>
+            <Text style={styles.textBtnOpen}>Choose the Device</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -243,7 +258,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#17194a'
+    backgroundColor: '#17194a',
   },
   modalBackground: {
     flex: 1,
@@ -262,11 +277,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: 'bold',
     fontSize: 18,
-    color: '#fff'
+    color: '#fff',
   },
   textDeviceModal: {
     marginTop: 10,
-    color: '#fff'
+    color: '#fff',
   },
   textBtnOpen: {
     flex: 1,
@@ -306,5 +321,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRightWidth: 1,
     borderColor: '#49439b',
-  }
+  },
 })
