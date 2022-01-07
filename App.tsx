@@ -22,6 +22,9 @@ import base64 from 'react-native-base64'
 
 import Svg, { Circle } from 'react-native-svg'
 
+import IconNextSvg from './assets/next.svg'
+import IconPauseSvg from './assets/pause.svg'
+import IconDiagramSvg from './assets/diagram.svg'
 import IconBluetoothSvg from './assets/bluetooth.svg'
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle)
@@ -30,26 +33,29 @@ const AnimatedTextInput = Animated.createAnimatedComponent(TextInput)
 const MIN = 75
 const MAX = 100
 
+const manager = new BleManager()
+
 interface IState {
   modalVisible: boolean
   devices: Array<Device>
   deviceId: DeviceId
+  deviceIsConnected: boolean
 }
 
 export default class App extends Component {
-  manager: BleManager
   state = {
     modalVisible: false,
     devices: [],
     deviceId: '',
+    deviceIsConnected: false,
   } as IState
   circleRadius = new Animated.Value(MIN)
   circleRef: any
   inputRef: any
+  intervalId: any
 
   constructor(props: any) {
     super(props)
-    this.manager = new BleManager()
   }
 
   openModal() {
@@ -58,7 +64,7 @@ export default class App extends Component {
   }
 
   loadingDevices() {
-    const subscription = this.manager.onStateChange((state) => {
+    const subscription = manager.onStateChange((state) => {
       if (state === 'PoweredOn') {
         this.scanDevices()
         subscription.remove()
@@ -69,7 +75,7 @@ export default class App extends Component {
   scanDevices() {
     const devices = new Set()
 
-    this.manager.startDeviceScan(
+    manager.startDeviceScan(
       ['0000180d-0000-1000-8000-00805f9b34fb'],
       null,
       async (error, device) => {
@@ -80,16 +86,18 @@ export default class App extends Component {
         if (Boolean(device?.name)) {
           devices.add(device)
           this.setState({ devices: [...devices], deviceId: device?.id })
-          this.manager.stopDeviceScan()
+          manager.stopDeviceScan()
         }
       }
     )
   }
 
   selectDevice(selectedDevice: Device) {
-    selectedDevice.connect()
+    selectedDevice
+      .connect()
       .then((device: Device) => {
         console.log('Connection available with: ', device.name)
+        this.setState({ deviceIsConnected: true })
         return device.discoverAllServicesAndCharacteristics()
       })
       .then((device: Device) => {
@@ -111,7 +119,7 @@ export default class App extends Component {
       heartRateCharacteristicUUID,
       (error: BleError | null, charac: Characteristic | null) => {
         if (error) {
-          console.log('Monitor fail:', JSON.stringify(error))
+          console.log('Monitor fail:', error.message)
           subscription.remove()
           return
         }
@@ -134,40 +142,90 @@ export default class App extends Component {
   }
 
   startAnimation() {
-    this.circleRadius.addListener((circleRadius) => {
-      this.circleRef?.setNativeProps({ r: circleRadius.value.toString() })
-    })
+    if (!this.intervalId) {
+      this.circleRadius.addListener((circleRadius) => {
+        this.circleRef?.setNativeProps({ r: circleRadius.value.toString() })
+      })
+      this.intervalId = setInterval(() => {
+        Animated.sequence([
+          Animated.timing(this.circleRadius, {
+            toValue: MIN,
+            duration: 200,
+            useNativeDriver: false,
+          }),
+          Animated.spring(this.circleRadius, {
+            toValue: MAX,
+            friction: 2.5,
+            useNativeDriver: false,
+          }),
+        ]).start()
+      }, 1000)
+    }
+  }
 
-    setInterval(() => {
-      Animated.sequence([
-        Animated.timing(this.circleRadius, {
-          toValue: MIN,
-          duration: 200,
-          useNativeDriver: false,
-        }),
-        Animated.spring(this.circleRadius, {
-          toValue: MAX,
-          friction: 2.5,
-          useNativeDriver: false,
-        }),
-      ]).start()
-    }, 1500)
+  stopAnimation() {
+    Animated.sequence([
+      Animated.timing(this.circleRadius, {
+        toValue: 0,
+        useNativeDriver: false,
+      }),
+      Animated.spring(this.circleRadius, {
+        toValue: 0,
+        useNativeDriver: false,
+      }),
+    ]).stop()
   }
 
   setModalVisible(visible: boolean) {
     this.setState({ modalVisible: visible })
   }
 
+  start() {
+    const { deviceId, deviceIsConnected } = this.state
+    if (deviceId && !deviceIsConnected) {
+      manager
+        .connectToDevice(deviceId)
+        .then((device) => {
+          console.log('Connection available with: ', device.name)
+          this.setState({ deviceIsConnected: true })
+          return device.discoverAllServicesAndCharacteristics()
+        })
+        .then((device: Device) => {
+          this.readingDeviceData(device)
+          this.startAnimation()
+        })
+        .catch((error) => {
+          console.log('Connection failed to start: ', error)
+        })
+    }
+  }
+
+  pause() {
+    const { deviceId, deviceIsConnected } = this.state
+    if (deviceId && deviceIsConnected) {
+      manager
+        .cancelDeviceConnection(deviceId)
+        .then((device: Device) => {
+          this.setState({ deviceIsConnected: false })
+          console.log(`Device ${device.name} desconnected`)
+        })
+        .catch((error) => {
+          console.log('Failed to pause connection: ', error)
+        })
+      clearInterval(this.intervalId)
+      this.intervalId = null
+      this.stopAnimation()
+    }
+  }
+
   componentWillUnmount() {
-    this.manager.cancelDeviceConnection(this.state.deviceId)
+    manager
+      .cancelDeviceConnection(this.state.deviceId)
       .then((device: Device) => {
         console.log(`Device ${device.name} desconnected`)
       })
       .catch((error) => {
-        console.log(error)
-      })
-      .finally(() => {
-        this.manager.destroy()
+        console.log('Failed to terminate: ', error)
       })
   }
 
@@ -215,7 +273,7 @@ export default class App extends Component {
             </View>
           </View>
         </Modal>
-        <View style={styles.animationSvg}>
+        <View style={styles.circleAnimation}>
           <Svg height={680} width={400}>
             <AnimatedCircle
               ref={(ref: any) => (this.circleRef = ref)}
@@ -237,16 +295,29 @@ export default class App extends Component {
             ]}
           />
         </View>
-        <View style={styles.btn}>
-          <TouchableOpacity
-            style={styles.btnOpen}
-            onPress={() => this.openModal()}
-          >
-            <View style={styles.iconBluetooth}>
-              <IconBluetoothSvg />
+        <View style={styles.menu}>
+          <View style={styles.menuContainer}>
+            <View style={styles.icon}>
+              <TouchableOpacity onPress={() => this.openModal()}>
+                <IconBluetoothSvg />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.textBtnOpen}>Choose the Device</Text>
-          </TouchableOpacity>
+            <View style={styles.icon}>
+              <TouchableOpacity onPress={() => this.start()}>
+                <IconNextSvg />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.icon}>
+              <TouchableOpacity onPress={() => this.pause()}>
+                <IconPauseSvg />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.icon}>
+              <TouchableOpacity>
+                <IconDiagramSvg />
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </View>
     )
@@ -290,18 +361,19 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  animationSvg: {
+  circleAnimation: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  btn: {
+  menu: {
     paddingHorizontal: 50,
+    paddingBottom: 50,
   },
-  btnOpen: {
+  menuContainer: {
     width: '100%',
-    height: 56,
+    height: 70,
     backgroundColor: '#493dbb',
-    borderRadius: 8,
+    borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -314,12 +386,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 30,
   },
-  iconBluetooth: {
-    width: 56,
+  icon: {
+    width: 80,
     height: 56,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRightWidth: 1,
-    borderColor: '#49439b',
   },
 })
