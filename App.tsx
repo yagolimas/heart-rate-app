@@ -92,22 +92,18 @@ export default class App extends Component {
     )
   }
 
-  selectDevice(selectedDevice: Device) {
-    selectedDevice
-      .connect()
-      .then((device: Device) => {
-        console.log('Connection available with: ', device.name)
-        this.setState({ deviceIsConnected: true })
-        return device.discoverAllServicesAndCharacteristics()
-      })
-      .then((device: Device) => {
-        this.setModalVisible(false)
-        this.readingDeviceData(device)
-        this.startAnimation()
-      })
-      .catch((error) => {
-        console.log('Connection failed: ', error)
-      })
+  async selectDevice(selectedDeviceId: string) {
+    try {
+      const device = await manager.connectToDevice(selectedDeviceId)
+      const deviceConnected =
+        await device.discoverAllServicesAndCharacteristics()
+      this.setState({ deviceIsConnected: true })
+      this.setModalVisible(false)
+      this.readingDeviceData(deviceConnected)
+      this.startAnimation()
+    } catch (error) {
+      console.log('Connection failed: ', error)
+    }
   }
 
   readingDeviceData(device: Device) {
@@ -133,8 +129,8 @@ export default class App extends Component {
   }
 
   decodeHeartRate(value: string) {
-    const data: any = base64.decode(value)
-    const firstBitValue: number = data[0] & 0x01
+    const data: string = base64.decode(value)
+    const firstBitValue = Number(data[0]) & 0x01
     if (firstBitValue === 0) {
       return data[1].charCodeAt(0)
     }
@@ -180,53 +176,48 @@ export default class App extends Component {
     this.setState({ modalVisible: visible })
   }
 
-  start() {
+  async start() {
     const { deviceId, deviceIsConnected } = this.state
     if (deviceId && !deviceIsConnected) {
-      manager
-        .connectToDevice(deviceId)
-        .then((device) => {
-          console.log('Connection available with: ', device.name)
-          this.setState({ deviceIsConnected: true })
-          return device.discoverAllServicesAndCharacteristics()
-        })
-        .then((device: Device) => {
-          this.readingDeviceData(device)
-          this.startAnimation()
-        })
-        .catch((error) => {
-          console.log('Connection failed to start: ', error)
-        })
+      try {
+        const device = await manager.connectToDevice(deviceId)
+        const deviceConnected =
+          await device.discoverAllServicesAndCharacteristics()
+        this.setState({ deviceIsConnected: true })
+        this.readingDeviceData(deviceConnected)
+        this.startAnimation()
+      } catch (error) {
+        console.log('Connection failed to start: ', error)
+      }
     }
   }
 
-  pause() {
+  async pause() {
     const { deviceId, deviceIsConnected } = this.state
     if (deviceId && deviceIsConnected) {
-      manager
-        .cancelDeviceConnection(deviceId)
-        .then((device: Device) => {
-          this.setState({ deviceIsConnected: false })
-          console.log(`Device ${device.name} desconnected`)
-        })
-        .catch((error) => {
-          console.log('Failed to pause connection: ', error)
-        })
-      clearInterval(this.intervalId)
-      this.intervalId = null
-      this.stopAnimation()
+      try {
+        const device = await manager.cancelDeviceConnection(deviceId)
+        this.setState({ deviceIsConnected: false })
+        this.stopAnimation()
+        clearInterval(this.intervalId)
+        this.intervalId = null
+        console.log(`Device ${device.name} desconnected`)
+      } catch (error) {
+        console.log('Failed to pause connection: ', error)
+      }
     }
   }
 
-  componentWillUnmount() {
-    manager
-      .cancelDeviceConnection(this.state.deviceId)
-      .then((device: Device) => {
-        console.log(`Device ${device.name} desconnected`)
-      })
-      .catch((error) => {
-        console.log('Failed to terminate: ', error)
-      })
+  async componentWillUnmount() {
+    try {
+      const { deviceId } = this.state
+      const device = await manager.cancelDeviceConnection(deviceId)
+      console.log(`Device ${device.name} desconnected`)
+    } catch (error) {
+      console.log('Failed to terminate: ', error)
+    } finally {
+      manager.destroy()
+    }
   }
 
   render() {
@@ -253,7 +244,7 @@ export default class App extends Component {
                   <TouchableOpacity
                     style={styles.textDeviceModal}
                     onPress={() => {
-                      this.selectDevice(device)
+                      this.selectDevice(device.id)
                     }}
                   >
                     <Text style={styles.textDeviceModal}>
