@@ -1,12 +1,12 @@
 # Expo
 
-## Criando projeto React Native com Expo
+### Criando projeto React Native com Expo
 
 ```bash
 expo init name-app
 ```
 
-## Instalando as dependências do ble-px através do Expo
+### Instalando as dependÃªncias do ble-px atravÃ©s do Expo
 
 ```bash
 expo add react-native-ble-plx @config-plugins/react-native-ble-plx expo-dev-client
@@ -19,37 +19,19 @@ Adicionar o @config-plugins/react-native-ble-plx no app.json.
 "plugins": ["@config-plugins/react-native-ble-plx"]
 ~~~
 
-## Executando através do Expo
+### Executando atravÃ©s do Expo
 
 ```bash
 expo start
 ```
 
-## Executa e limpa o cache do Expo
-
-```bash
-expo r -c
-```
-
-## Executa utilizando o tunnel
+### Executa utilizando o tunnel
 
 ```bash
 expo start --tunnel
 ```
 
-### Executa local no Android através do Expo Go
-
-```bash
-expo start --localhost --android
-```
-
-### Executa o binário do Android de forma local
-
-```bash
-expo run:android
-```
-
-### Executa o binário do Android local para um device (**-d**)  especifico
+### Executa o binÃ¡rio do Android local para um device (**-d**)  especifico
 
 ```bash
 expo run:android -d
