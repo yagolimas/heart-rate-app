@@ -19,6 +19,7 @@ import {
 } from 'react-native-ble-plx'
 
 import base64 from 'react-native-base64'
+import { Buffer } from 'buffer'
 
 import Svg, { Circle } from 'react-native-svg'
 
@@ -120,6 +121,7 @@ export default class App extends Component {
           return
         }
         const heartRate = this.decodeHeartRate(charac?.value!)
+        this.decodeRRIntervals(charac?.value!)
         this.inputRef?.setNativeProps({
           text: `${heartRate}`,
         })
@@ -135,6 +137,20 @@ export default class App extends Component {
       return data[1].charCodeAt(0)
     }
     return Number(data[1].charCodeAt(0) << 8) + Number(data[2].charCodeAt(2))
+  }
+
+  decodeRRIntervals(value: string) {
+    const buffer = Buffer.from(value, 'base64')
+    const data = new Uint8Array(buffer)
+
+    if (data.length > 2) {
+      try {
+        const rr1 = (buffer.readUInt16LE(2) / 1024) * 1000
+        console.log(Math.round(rr1))
+        const rr2 = (buffer.readUInt16LE(4) / 1024) * 1000
+        console.log(Math.round(rr2))
+      } catch (e) {}
+    }
   }
 
   startAnimation() {
